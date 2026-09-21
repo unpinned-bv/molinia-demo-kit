@@ -357,6 +357,94 @@ class EmptyCommandTests(unittest.TestCase):
         self.assertIn("does not end in '_'", str(ctx.exception))
 
 
+# =========================================================================== lake-catalog lock
+
+# Verbatim from dev, 2026-09-21: one DROP in seventeen lost the lake-catalog race.
+LOCK = ('HTTP 400: TransactionContext Error: Failed to commit: Failed to commit DuckLake transaction.\n'
+        'Failed to commit: Failed to execute query "COMMIT": database is locked')
+COLS = ["table_catalog", "table_schema", "table_name", "table_type"]
+
+
+class LockRetryTests(unittest.TestCase):
+    def setUp(self):
+        self.sleeps = []
+        patcher = mock.patch.object(molinia.time, "sleep", side_effect=self.sleeps.append)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_only_the_lock_is_recognised(self):
+        self.assertTrue(molinia.is_lock_error(molinia.MoliniaError(LOCK)))
+        self.assertFalse(molinia.is_lock_error(molinia.MoliniaError(
+            "HTTP 400: Catalog Error: Existing object x is of type View, trying to drop type Table")))
+
+    def test_a_locked_drop_is_retried_and_the_org_ends_empty(self):
+        state = {"dropped": set(), "locked": False}
+
+        def handler(sql):
+            if sql.upper().startswith("DROP"):
+                if "sf_stg_customers" in sql and not state["locked"]:
+                    state["locked"] = True
+                    raise molinia.MoliniaError(LOCK)
+                state["dropped"].add(sql)
+                return {"columns": [], "rows": []}
+            left = [n for n in ("raw_orders", "sf_stg_customers")
+                    if not any(f'"{n}"' in d for d in state["dropped"])]
+            return {"columns": COLS, "rows": list_rows(*left)}
+
+        fc = FakeClient(handler)
+        code, out, err = run(lambda: molinia.cmd_empty(argparse.Namespace(yes=True), client=fc))
+        self.assertEqual(code, 0, out)
+        self.assertIn("verified", out)
+        self.assertIn("[lock] drop sf_stg_customers", err)
+        self.assertEqual(self.sleeps, [2.0])
+        self.assertEqual(sum('"sf_stg_customers"' in q for q in fc.sql if q.upper().startswith("DROP")), 2)
+
+    def test_a_drop_that_stays_locked_fails_with_the_true_reason(self):
+        def handler(sql):
+            if sql.upper().startswith("DROP"):
+                raise molinia.MoliniaError(LOCK)
+            return {"columns": COLS, "rows": list_rows("raw_orders")}
+
+        fc = FakeClient(handler)
+        code, out, _ = run(lambda: molinia.cmd_empty(argparse.Namespace(yes=True), client=fc))
+        self.assertEqual(code, 1)
+        self.assertIn("its DROP failed above", out)
+        self.assertNotIn("not reachable", out)
+        self.assertEqual(self.sleeps, [2.0, 4.0, 8.0])
+
+    def test_any_other_error_is_not_retried(self):
+        def handler(sql):
+            if sql.upper().startswith("DROP"):
+                raise molinia.MoliniaError("HTTP 400: Catalog Error: Existing object raw_orders is of "
+                                           "type View, trying to drop type Table")
+            return {"columns": COLS, "rows": list_rows("raw_orders")}
+
+        fc = FakeClient(handler)
+        code, _, _ = run(lambda: molinia.cmd_empty(argparse.Namespace(yes=True), client=fc))
+        self.assertEqual(code, 1)
+        self.assertEqual(self.sleeps, [])
+        self.assertEqual(sum(q.upper().startswith("DROP") for q in fc.sql), 1)
+
+    def test_a_locked_ingest_is_retried_on_stage(self):
+        class LockOnce(FakeClient):
+            locked = False
+
+            def ingest(self, *a, **k):
+                if not self.locked:
+                    self.locked = True
+                    raise molinia.MoliniaError(LOCK)
+                return super().ingest(*a, **k)
+
+        s3 = FakeS3({f"{PREFIX}/raw/orders.parquet": parquet_bytes(3)})
+        fc = LockOnce(ingest_rows={"raw_orders": 3})
+        with fake_bucket_env():
+            code, out, err = run(lambda: molinia.cmd_ingest(ingest_args(), client=fc, s3=s3))
+        self.assertEqual(code, 0, out)
+        self.assertIn("1/1 ingested", out)
+        self.assertIn("[lock] ingest raw_orders", err)
+        self.assertEqual(self.sleeps, [2.0])
+
+
 # =========================================================================== the agent may not run it
 
 class AgentProhibitionTests(unittest.TestCase):

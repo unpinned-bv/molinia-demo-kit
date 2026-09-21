@@ -39,6 +39,7 @@ import argparse
 import json
 import re
 import sys
+import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
@@ -63,6 +64,34 @@ SOURCE_SCHEMA = ENGAGEMENT.source_schema
 TABLE_NAME_RE = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]{0,127}$")   # server IngestDto
 IDENT_RE = re.compile(r"^[a-z_][a-z0-9_]*$")
 SKIP_CATALOGS = frozenset({"temp", "system"})
+
+
+# A DuckLake commit can lose the race for the lake catalog when another
+# connection (maintenance, a reconcile sweep) holds it: HTTP 400 "Failed to
+# commit DuckLake transaction ... database is locked" (measured 2026-09-21, one
+# DROP in seventeen). The failed transaction changed nothing, and both writes
+# that meet it are idempotent (DROP IF EXISTS, ingest's CREATE OR REPLACE), so
+# the same request is safe to send again. Only this error is retried.
+LOCK_MARKERS = ("database is locked", "Failed to commit DuckLake transaction")
+LOCK_BACKOFF_S = (2.0, 4.0, 8.0)
+
+
+def is_lock_error(exc: BaseException) -> bool:
+    return any(m in str(exc) for m in LOCK_MARKERS)
+
+
+def with_lock_retry(fn, label: str, sleep=None):
+    """fn(), retried with backoff while it fails on a lake-catalog lock."""
+    sleep = sleep or time.sleep
+    for attempt in range(len(LOCK_BACKOFF_S) + 1):
+        try:
+            return fn()
+        except MoliniaError as exc:
+            if not is_lock_error(exc) or attempt == len(LOCK_BACKOFF_S):
+                raise
+            wait = LOCK_BACKOFF_S[attempt]
+            print(f"[lock] {label}: lake catalog busy, retrying in {wait:.0f}s", file=sys.stderr, flush=True)
+            sleep(wait)
 
 
 def qident(name: str) -> str:
@@ -272,8 +301,10 @@ def cmd_ingest(args, client: Optional[MoliniaClient] = None, s3=None) -> int:
     results = []
     for p in plan:
         try:
-            res = client.ingest(args.data_source, p["target"], p["file_path"],
-                                location_id=args.location, file_format="parquet")
+            res = with_lock_retry(
+                lambda: client.ingest(args.data_source, p["target"], p["file_path"],
+                                      location_id=args.location, file_format="parquet"),
+                f"ingest {p['target']}")
             n = to_int(res.get("rowCount"))
             ok = p["local_rows"] is None or n == p["local_rows"]
             status = "ok  " if ok else "ROWS"
@@ -376,19 +407,23 @@ def cmd_empty(args, client: Optional[MoliniaClient] = None) -> int:
         return 0
 
     failures = 0
+    failed: set = set()
     for name, kind in targets:
         sql = drop_input_sql(name, kind)
         try:
-            client.execute(sql, idempotent=True)
+            with_lock_retry(lambda: client.execute(sql, idempotent=True), f"drop {name}")
             print(f"ok   {sql}", flush=True)
         except MoliniaError as exc:
             failures += 1
+            failed.add(name.lower())
             print(f"FAIL {sql}: {exc}", flush=True)
     left = plan_empty(client.execute(empty_list_sql(), idempotent=True).get("rows", []))
     if left:
         failures += 1
         for name, _ in left:
-            print(f"STILL THERE: {SOURCE_SCHEMA}.{name} (not reachable by an unqualified DROP)")
+            why = ("its DROP failed above; re-run `make molinia-empty`" if name.lower() in failed
+                   else "not reachable by an unqualified DROP")
+            print(f"STILL THERE: {SOURCE_SCHEMA}.{name} ({why})")
     else:
         kept = f"; kept {len(masked)} masked" if masked else ""
         print(f"verified: no other {raw}* / {key}* tables left in {SOURCE_SCHEMA}{kept}; "
