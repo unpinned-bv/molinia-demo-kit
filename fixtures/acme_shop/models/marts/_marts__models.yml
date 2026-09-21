@@ -1,0 +1,129 @@
+version: 2
+
+models:
+  - name: fct_orders
+    description: One row per order with amounts, payment state and customer country.
+    columns:
+      - name: order_id
+        description: Primary key.
+        data_tests:
+          - unique
+          - not_null
+      - name: customer_id
+        description: Account that placed the order (not de-duplicated; see dim_customers).
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_customers')
+                field: customer_id
+      - name: country_code
+        data_tests:
+          - not_null
+      - name: order_ts
+      - name: order_date
+        data_tests:
+          - not_null
+      - name: order_month
+      - name: status
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ["placed", "shipped", "delivered", "cancelled", "returned"]
+      - name: channel
+      - name: device
+      - name: shipping_method
+      - name: coupon_code
+      - name: has_coupon
+      - name: is_gift
+      - name: item_count
+        description: Number of order lines (0 for an empty order).
+      - name: units
+      - name: gross_amount
+        description: Sum of quantity x unit price, EUR.
+      - name: discount_amount
+        description: Total line discounts, EUR.
+      - name: items_amount
+        description: Sum of line amounts after discount, EUR.
+      - name: shipping_amount
+        description: Shipping charged, EUR (0 when unknown).
+      - name: order_total
+        description: items_amount + shipping_amount, EUR.
+        data_tests:
+          - not_null
+      - name: paid_amount
+        description: Net of successful payments and refunds, EUR.
+      - name: payment_attempts
+      - name: failed_payments
+      - name: paid_ts
+        description: Time of the last successful payment.
+      - name: is_fully_paid
+      - name: net_revenue
+        description: order_total, or 0 for cancelled and returned orders.
+
+  - name: dim_customers
+    description: >
+      One row per person (duplicate accounts merged on e-mail), with lifetime
+      order and web activity.
+    columns:
+      - name: customer_id
+        description: The earliest account of the person.
+        data_tests:
+          - unique
+          - not_null
+      - name: first_name
+      - name: last_name
+      - name: email
+        data_tests:
+          - unique
+          - not_null
+      - name: country_code
+      - name: region
+      - name: signup_date
+      - name: signup_cohort
+      - name: marketing_opt_in
+      - name: merged_accounts
+        description: Number of later duplicate accounts folded into this customer.
+      - name: lifetime_orders
+      - name: delivered_orders
+      - name: cancelled_or_returned_orders
+      - name: orders_with_coupon
+      - name: lifetime_revenue
+        description: Sum of net_revenue over all merged accounts, EUR.
+      - name: first_order_date
+      - name: last_order_date
+      - name: days_since_last_order
+        description: Days from the last order to the as_of_date variable.
+      - name: product_views
+      - name: cart_adds
+      - name: customer_segment
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ["prospect", "loyal", "lapsed", "active"]
+
+  - name: rpt_monthly_revenue
+    description: >
+      Revenue per order month and customer country. Grain (order_month,
+      country_code) is enforced by tests/assert_rpt_monthly_revenue_grain.sql.
+    columns:
+      - name: order_month
+        data_tests:
+          - not_null
+      - name: country_code
+        data_tests:
+          - not_null
+      - name: orders
+      - name: revenue_orders
+        description: Orders that are neither cancelled nor returned.
+      - name: customers
+      - name: revenue
+        description: Sum of net_revenue, EUR.
+      - name: discounts
+      - name: avg_order_value
+        description: revenue / revenue_orders, rounded to the cent.
+      - name: revenue_share_pct
+        description: Country's share of the month's revenue in percent (two decimals).
+      - name: channels
+        description: Comma-separated distinct sales channels, alphabetical.

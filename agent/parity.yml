@@ -1,0 +1,63 @@
+# Parity checks for agent/parity.py (contract: DESIGN.md, "Parity").
+#
+# For each model the Molinia relation (what `dbt build --target molinia`
+# produced) is compared with the Snowflake answer key (the model's Snowflake
+# output, unloaded to Parquet and ingested as main.sf_<model>), joined on `key`
+# with a FULL OUTER JOIN. Column names match case-insensitively (the answer
+# keys carry Snowflake's upper-case names).
+#
+# Numeric columns compare with |a - b| <= tolerance * greatest(1, |a|, |b|):
+# float noise passes, a one-cent difference fails.
+
+tolerance: 1.0e-9
+
+models:
+  - name: stg_customers
+    relation: staging.stg_customers
+    answer_key: main.sf_stg_customers
+    key: [customer_id]
+
+  - name: stg_products
+    relation: staging.stg_products
+    answer_key: main.sf_stg_products
+    key: [product_id]
+
+  - name: stg_orders
+    relation: staging.stg_orders
+    answer_key: main.sf_stg_orders
+    key: [order_id]
+
+  - name: stg_order_items
+    relation: staging.stg_order_items
+    answer_key: main.sf_stg_order_items
+    key: [order_item_id]
+
+  - name: stg_payments
+    relation: staging.stg_payments
+    answer_key: main.sf_stg_payments
+    key: [payment_id]
+
+  - name: int_order_lines
+    relation: intermediate.int_order_lines
+    answer_key: main.sf_int_order_lines
+    key: [order_item_id]
+
+  - name: int_web_item_views
+    relation: intermediate.int_web_item_views
+    answer_key: main.sf_int_web_item_views
+    key: [event_id, item_position]
+
+  - name: dim_customers
+    relation: marts.dim_customers
+    answer_key: main.sf_dim_customers
+    key: [customer_id]
+
+  - name: fct_orders
+    relation: marts.fct_orders
+    answer_key: main.sf_fct_orders
+    key: [order_id]
+
+  - name: rpt_monthly_revenue
+    relation: marts.rpt_monthly_revenue
+    answer_key: main.sf_rpt_monthly_revenue
+    key: [order_month, country_code]

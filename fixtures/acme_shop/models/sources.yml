@@ -1,0 +1,69 @@
+version: 2
+
+sources:
+  - name: raw
+    description: >
+      Operational extracts from the Acme web shop, loaded nightly into
+      Snowflake. Column names are upper-case (unquoted Snowflake identifiers).
+    database: MOLINIA_DEMO
+    schema: RAW
+    tables:
+      - name: customers
+        description: One row per shop account. The same person can have more than one account.
+        columns:
+          - name: customer_id
+            data_tests:
+              - unique
+              - not_null
+
+      - name: customer_contacts
+        description: >
+          Phone, IBAN and date of birth per customer. PII: not modelled, not
+          exposed to analysts.
+        config:
+          meta:
+            contains_pii: true
+
+      - name: products
+        description: Product catalogue with the current list price.
+        columns:
+          - name: product_id
+            data_tests:
+              - unique
+              - not_null
+
+      - name: orders
+        description: >
+          One row per order. ORDER_META is a VARIANT written by the checkout
+          service (coupon, device, shipping, gift flag); keys are optional.
+        columns:
+          - name: order_id
+            data_tests:
+              - unique
+              - not_null
+
+      - name: order_items
+        description: Order lines with the unit price and discount at the time of the order.
+        columns:
+          - name: order_item_id
+            data_tests:
+              - unique
+              - not_null
+
+      - name: payments
+        description: Payment attempts from the payment service provider, amounts in cents.
+        columns:
+          - name: payment_id
+            data_tests:
+              - unique
+              - not_null
+
+      - name: web_events
+        description: >
+          Clickstream events. PAYLOAD is a VARIANT with the session id, the
+          items shown or added (an array), and the UTM parameters.
+        columns:
+          - name: event_id
+            data_tests:
+              - unique
+              - not_null

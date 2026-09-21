@@ -1,0 +1,35 @@
+name: acme_shop
+version: "1.4.0"
+config-version: 2
+
+profile: acme_shop
+
+model-paths: ["models"]
+macro-paths: ["macros"]
+test-paths: ["tests"]
+target-path: "target"
+clean-targets: ["target", "dbt_packages"]
+
+require-dbt-version: ">=1.8.0"
+
+vars:
+  # Reporting cut-off. Age and recency metrics are measured against this date
+  # (never CURRENT_DATE) so a rebuild of the same data gives the same numbers.
+  as_of_date: "2026-06-30"
+
+models:
+  acme_shop:
+    # Snowflake-only settings, applied project-wide.
+    +transient: true
+    +copy_grants: true
+    +query_tag: acme_dbt
+
+    staging:
+      +schema: staging
+      +materialized: view
+    intermediate:
+      +schema: intermediate
+      +materialized: view
+    marts:
+      +schema: marts
+      +materialized: table

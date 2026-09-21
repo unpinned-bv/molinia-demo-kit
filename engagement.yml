@@ -1,0 +1,59 @@
+# The engagement: everything in the kit that changes per client.
+#
+# Every tool reads this file through tools/_engagement.py. Nothing under tools/
+# hardcodes a client value any more, so pointing the kit at another client is
+# this file plus agent/parity.yml (which partner/assess.py generates from the
+# client's dbt project).
+#
+# To run a second engagement without editing this one:
+#   MOLINIA_KIT_ENGAGEMENT=/path/to/client.yml .venv/bin/python tools/molinia.py status
+#
+# Prose in CLAUDE.md and agent/MIGRATION_RULES.md still names these values by
+# hand. `tools/engagement.py check` lists every line that disagrees with this
+# file, so re-pointing the kit ends with that command, not with a grep.
+
+name: acme-shop-demo
+
+# The client's dbt project, relative to the kit root (or an absolute path).
+project_dir: acme_shop
+
+# Local export tree and the object-storage key prefix the unloaded Parquet
+# lands under: exports/<export_prefix>/{raw,expected}/*.parquet
+export_prefix: acme-snowflake-export
+
+snowflake:
+  # Stage the unload writes to, as <database>.<schema>.<stage>. tools/sf.py
+  # clears it and matches COPY INTO targets against it, so a wrong value here
+  # silently unloads nothing.
+  stage: MOLINIA_DEMO.PUBLIC.MOLINIA_EXPORT
+
+molinia:
+  # Schema holding the ingested source tables and the Snowflake answer keys.
+  # Never dropped, never written by the ported dbt project.
+  source_schema: main
+
+  # The only schemas the ported project writes, and the only ones
+  # `tools/molinia.py reset` drops. Listing a protected schema here is refused
+  # at load time: it would drop the answer keys.
+  dbt_schemas: [staging, intermediate, marts]
+
+  # <source_schema>.<raw_prefix><table>        = ingested client source table
+  # <source_schema>.<answer_key_prefix><model> = that model's Snowflake output
+  raw_prefix: raw_
+  answer_key_prefix: sf_
+
+  # Storage connection the ingest reads the Parquet from.
+  data_source_id: 1     # "test-storage-account" (MinIO connection 1)
+  location_id: 1        # path "" = bucket root, so filePath is bucket-relative
+
+# Tables no model, test or query may read: masked columns and PII. Rule H2.
+# A service account can never be unmasked, so a model reading one of these
+# would silently persist '****'.
+forbidden_tables:
+  - main.raw_customer_contacts
+
+service_accounts:
+  # Holds MOLINIA_API_KEY: the agent's dbt build and parity. Rule H4.
+  build: demo-dbt-build
+  # Holds MOLINIA_READONLY_KEY: the presenter's masked read. Never the agent's.
+  readonly: demo-agent-readonly

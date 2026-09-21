@@ -1,0 +1,161 @@
+version: 2
+
+models:
+  - name: stg_customers
+    description: >
+      One row per shop account, cleaned: trimmed names, normalised e-mail and
+      country code. Duplicate accounts of the same person are kept here and
+      merged in dim_customers.
+    columns:
+      - name: customer_id
+        description: Primary key of the account.
+        data_tests:
+          - unique
+          - not_null
+      - name: email
+        description: Lower-cased, trimmed e-mail address; the matching key for duplicate accounts.
+        data_tests:
+          - not_null
+      - name: country_code
+        description: ISO 3166-1 alpha-2, upper case.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ["NL", "DE", "BE", "FR", "AT", "DK", "SE", "IT", "ES", "PL"]
+      - name: region
+        description: Benelux or Rest of EU.
+      - name: signup_ts
+        description: Account creation time (shop local time, no time zone).
+      - name: signup_date
+        description: Date part of signup_ts.
+      - name: signup_cohort
+        description: Signup month as YYYY-MM.
+      - name: account_age_days
+        description: Days from signup to the as_of_date variable.
+      - name: marketing_opt_in
+        description: Newsletter consent; unknown consent counts as no.
+        data_tests:
+          - not_null
+
+  - name: stg_products
+    description: Product catalogue with decoded category names.
+    columns:
+      - name: product_id
+        description: Primary key.
+        data_tests:
+          - unique
+          - not_null
+      - name: sku
+        description: Stock keeping unit, upper case.
+        data_tests:
+          - unique
+          - not_null
+      - name: category_code
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ["EL", "HO", "SP", "BO", "TO"]
+      - name: category_name
+        description: Human-readable category.
+      - name: list_price
+        description: Current list price in EUR; 0 when the ERP has no price.
+      - name: is_price_missing
+        description: True when the source has no list price.
+      - name: is_active
+        description: Whether the product is still sold.
+
+  - name: stg_orders
+    description: >
+      One row per order with the useful ORDER_META keys extracted into typed
+      columns.
+    columns:
+      - name: order_id
+        description: Primary key.
+        data_tests:
+          - unique
+          - not_null
+      - name: customer_id
+        description: Account that placed the order.
+        data_tests:
+          - not_null
+      - name: order_ts
+        description: Order time (shop local time, no time zone).
+      - name: order_date
+        description: Date part of order_ts.
+      - name: order_month
+        description: First day of the order month.
+      - name: status
+        description: Order status, lower case.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ["placed", "shipped", "delivered", "cancelled", "returned"]
+      - name: channel
+        description: Sales channel (web, app, marketplace).
+      - name: coupon_code
+        description: Coupon code used at checkout, if any.
+      - name: device
+        description: Device type reported by the checkout (ios, android, desktop).
+      - name: shipping_method
+        description: standard or express.
+      - name: shipping_cost
+        description: Shipping cost in EUR; NULL when missing or unparseable.
+      - name: is_gift
+        description: Gift wrapping requested.
+      - name: return_deadline
+        description: Last day a return is accepted (order date + 30 days).
+
+  - name: stg_order_items
+    description: Order lines with exact line amounts after discount.
+    columns:
+      - name: order_item_id
+        description: Primary key.
+        data_tests:
+          - unique
+          - not_null
+      - name: order_id
+        data_tests:
+          - not_null
+      - name: product_id
+        data_tests:
+          - not_null
+      - name: quantity
+      - name: unit_price
+        description: Unit price in EUR at the time of the order.
+      - name: discount_pct
+        description: Line discount in percent.
+      - name: gross_amount
+        description: quantity x unit_price.
+      - name: line_amount
+        description: Amount after discount, rounded to the cent (half away from zero).
+        data_tests:
+          - not_null
+      - name: discount_amount
+        description: gross_amount - line_amount.
+
+  - name: stg_payments
+    description: Payment attempts converted to EUR.
+    columns:
+      - name: payment_id
+        description: Primary key.
+        data_tests:
+          - unique
+          - not_null
+      - name: order_id
+        data_tests:
+          - not_null
+      - name: payment_method
+      - name: payment_status
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ["success", "failed", "refunded"]
+      - name: amount_cents
+      - name: amount
+        description: Attempted amount in EUR.
+      - name: net_amount
+        description: Contribution to the order balance (+ success, - refund, 0 failed).
+      - name: paid_ts
+      - name: paid_date

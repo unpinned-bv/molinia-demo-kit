@@ -1,0 +1,33 @@
+# molinia-demo-kit. This file is an ALLOWLIST: everything at the top level is
+# ignored unless re-included below, so a file dropped in the kit root stays
+# private by default. Add a path here only after checking it holds nothing
+# sensitive (no hosts, org ids, account ids, people, or run output).
+/*
+
+!/.gitignore
+!/README.md
+!/CLAUDE.md
+!/DESIGN.md
+!/Makefile
+!/engagement.yml
+!/requirements.txt
+!/agent/
+!/fixtures/
+!/partner/
+!/setup/
+!/tools/
+
+# Credentials: only the templates are public.
+!/.secrets/
+/.secrets/*
+!/.secrets/*.example
+
+# Local-only material inside re-included directories.
+/agent/scratch/
+/partner/*.md
+/tools/render_video.py
+
+# Build and editor noise.
+__pycache__/
+*.pyc
+.DS_Store

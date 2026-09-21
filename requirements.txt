@@ -1,0 +1,15 @@
+# Python 3.12. From the kit root:
+#   python3.12 -m venv .venv && .venv/bin/pip install -r requirements.txt
+boto3==1.43.98
+cryptography==50.0.1
+dbt-core==1.12.5
+dbt-snowflake==1.12.1
+duckdb==1.5.5
+Jinja2==3.1.6
+pyarrow==25.0.1
+PyYAML==6.0.3
+requests==2.34.2
+snowflake-connector-python==4.7.4
+# dbt-molinia is NOT listed: the kit needs a pre-release build with request
+# pacing, 429 retry and result-type coercion, which is not on PyPI yet. CLAUDE.md's
+# `adapter-ok` check tells you whether the installed adapter has both fixes.

@@ -1,0 +1,20 @@
+# Connection profile for the Acme Shop analytics project.
+# Every value comes from the environment; nothing secret lives in this file.
+# Key-pair authentication: SNOWFLAKE_PRIVATE_KEY_PATH points at an unencrypted
+# PKCS#8 private key whose public half is registered on SNOWFLAKE_USER.
+acme_shop:
+  target: snowflake
+  outputs:
+    snowflake:
+      type: snowflake
+      account: "{{ env_var('SNOWFLAKE_ACCOUNT') }}"
+      user: "{{ env_var('SNOWFLAKE_USER') }}"
+      role: "{{ env_var('SNOWFLAKE_ROLE') }}"
+      private_key_path: "{{ env_var('SNOWFLAKE_PRIVATE_KEY_PATH') }}"
+      warehouse: "{{ env_var('SNOWFLAKE_WAREHOUSE') }}"
+      database: "{{ env_var('SNOWFLAKE_DATABASE') }}"
+      schema: ANALYTICS
+      threads: 4
+      client_session_keep_alive: false
+      connect_retries: 2
+      connect_timeout: 30

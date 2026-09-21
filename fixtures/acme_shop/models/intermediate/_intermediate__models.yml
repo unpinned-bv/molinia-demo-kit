@@ -1,0 +1,64 @@
+version: 2
+
+models:
+  - name: int_order_lines
+    description: Order lines enriched with order and product attributes.
+    columns:
+      - name: order_item_id
+        description: Primary key (one row per order line).
+        data_tests:
+          - unique
+          - not_null
+      - name: order_id
+        data_tests:
+          - not_null
+      - name: customer_id
+      - name: order_date
+      - name: order_month
+      - name: order_status
+      - name: channel
+      - name: product_id
+      - name: sku
+      - name: category_name
+      - name: quantity
+      - name: unit_price
+      - name: discount_pct
+      - name: gross_amount
+      - name: discount_amount
+      - name: line_amount
+      - name: share_of_order
+        description: This line's share of the order value (0-1, float).
+
+  - name: int_web_item_views
+    description: >
+      One row per item in a web event's items array. Grain: (event_id,
+      item_position); web_item_view_id is the concatenated key.
+    columns:
+      - name: web_item_view_id
+        description: "Surrogate key: '<event_id>-<item_position>'."
+        data_tests:
+          - unique
+          - not_null
+      - name: event_id
+        data_tests:
+          - not_null
+      - name: item_position
+        description: 0-based position in the event's items array.
+        data_tests:
+          - not_null
+      - name: customer_id
+        description: NULL for anonymous visitors.
+      - name: event_ts
+      - name: event_type
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ["product_view", "add_to_cart", "checkout"]
+      - name: session_id
+      - name: sku
+        description: SKU as sent by the front end, upper-cased.
+      - name: product_id
+        description: Catalogue product; NULL when the SKU is unknown.
+      - name: quantity
+      - name: utm_source
+      - name: utm_campaign
